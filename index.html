@@ -3,8 +3,421 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Spacewar</title>
+  <meta name="description" content="SPACEWAR — a 2D vector arcade dogfight in the asteroid belt.">
+  <meta name="color-scheme" content="dark">
+  <title>SPACEWAR</title>
+  <style>
+    :root {
+      --line: #ffffff;
+      --dim: rgba(255, 255, 255, 0.55);
+      --faint: rgba(255, 255, 255, 0.22);
+      --bg: #000000;
+      --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--line);
+      font-family: var(--mono);
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #field {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      z-index: 0;
+    }
+
+    /* Vignette + faint scanlines: CRT cabinet feel, kept below the readable text. */
+    .crt {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          to bottom,
+          rgba(255, 255, 255, 0.028) 0 1px,
+          transparent 1px 3px
+        ),
+        radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.75) 100%);
+    }
+
+    .stage {
+      position: relative;
+      z-index: 2;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: clamp(1.25rem, 3.5vw, 2.75rem);
+    }
+
+    .topbar,
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      font-size: clamp(0.55rem, 1.5vw, 0.7rem);
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: clamp(1rem, 3vh, 2rem);
+      padding: 1rem 0;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2.75rem, 15vw, 10rem);
+      line-height: 0.9;
+      letter-spacing: clamp(0.04em, 1.2vw, 0.12em);
+      font-weight: 400;
+      /* Outlined glyphs to match the wireframe shapes on the field. */
+      color: transparent;
+      -webkit-text-stroke: clamp(1px, 0.25vw, 2.5px) var(--line);
+      text-stroke: clamp(1px, 0.25vw, 2.5px) var(--line);
+      padding-right: 0.12em; /* balance the letter-spacing gap on the last glyph */
+    }
+
+    @supports not ((-webkit-text-stroke: 1px #fff) or (text-stroke: 1px #fff)) {
+      h1 { color: var(--line); }
+    }
+
+    .tagline {
+      margin: 0;
+      max-width: 46ch;
+      font-size: clamp(0.65rem, 1.7vw, 0.85rem);
+      line-height: 1.9;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .rule {
+      width: min(28rem, 60vw);
+      height: 1px;
+      background: var(--faint);
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: clamp(0.6rem, 2vw, 1rem);
+    }
+
+    .btn {
+      appearance: none;
+      background: transparent;
+      color: var(--line);
+      border: 1px solid var(--line);
+      font: inherit;
+      font-size: clamp(0.7rem, 1.8vw, 0.85rem);
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      text-decoration: none;
+      padding: 0.85em 1.6em 0.85em 1.88em; /* extra left pad offsets the letter-spaced tail */
+      cursor: pointer;
+      transition: background-color 120ms linear, color 120ms linear;
+    }
+
+    .btn:hover,
+    .btn:focus-visible,
+    .btn[data-active="true"] {
+      background: var(--line);
+      color: var(--bg);
+      outline: none;
+    }
+
+    .btn--ghost {
+      border-color: var(--faint);
+      color: var(--dim);
+    }
+
+    .btn--ghost:hover,
+    .btn--ghost:focus-visible,
+    .btn--ghost[data-active="true"] {
+      border-color: var(--line);
+      background: transparent;
+      color: var(--line);
+    }
+
+    .keys {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: clamp(0.75rem, 3vw, 2.25rem);
+      font-size: clamp(0.55rem, 1.5vw, 0.7rem);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .keys span { white-space: nowrap; }
+
+    .keys kbd {
+      font: inherit;
+      border: 1px solid var(--faint);
+      padding: 0.3em 0.55em;
+      margin-right: 0.5em;
+      color: var(--line);
+    }
+
+    .blink { animation: blink 1.15s steps(1, end) infinite; }
+
+    @keyframes blink {
+      0%, 55% { opacity: 1; }
+      56%, 100% { opacity: 0.12; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .blink { animation: none; }
+    }
+
+    @media (max-width: 34rem) {
+      .topbar .meta,
+      .footer .meta { display: none; }
+      .tagline { letter-spacing: 0.2em; line-height: 2; }
+    }
+
+    @media (max-height: 30rem) {
+      .keys { display: none; }
+    }
+  </style>
 </head>
 <body>
+  <canvas id="field" aria-hidden="true"></canvas>
+  <div class="crt" aria-hidden="true"></div>
+
+  <div class="stage">
+    <header class="topbar">
+      <span>Sector 07 &middot; Asteroid Belt</span>
+      <span class="meta">2 Players &middot; Vector</span>
+    </header>
+
+    <main class="hero">
+      <h1>SPACEWAR</h1>
+      <p class="tagline">One ship. No brakes. A belt full of rock.</p>
+      <div class="rule" aria-hidden="true"></div>
+      <nav>
+        <a class="btn" href="#" data-menu>Play</a>
+        <a class="btn btn--ghost" href="#" data-menu>How to play</a>
+        <a class="btn btn--ghost" href="#" data-menu>High scores</a>
+      </nav>
+      <div class="keys">
+        <span><kbd>&larr;</kbd><kbd>&rarr;</kbd>Rotate</span>
+        <span><kbd>&uarr;</kbd>Thrust</span>
+        <span><kbd>Space</kbd>Fire</span>
+        <span><kbd>Shift</kbd>Hyperspace</span>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span class="blink">Insert coin</span>
+      <span class="meta">v0.1 &middot; Hi 00000</span>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var canvas = document.getElementById('field');
+      var ctx = canvas.getContext('2d');
+      var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      var W = 0, H = 0;
+      var stars = [], rocks = [], ship = null;
+
+      function rand(min, max) { return min + Math.random() * (max - min); }
+
+      // Irregular closed polygon — the classic vector-arcade asteroid silhouette.
+      function makeRock(x, y, r) {
+        var n = Math.round(rand(9, 13));
+        var verts = [];
+        for (var i = 0; i < n; i++) {
+          verts.push({ a: (i / n) * Math.PI * 2, r: r * rand(0.72, 1.18) });
+        }
+        var speed = rand(6, 22) / Math.max(r, 1) * 6;
+        var dir = rand(0, Math.PI * 2);
+        return {
+          x: x, y: y, r: r, verts: verts,
+          vx: Math.cos(dir) * speed,
+          vy: Math.sin(dir) * speed,
+          rot: rand(0, Math.PI * 2),
+          vrot: rand(-0.25, 0.25),
+          width: r > 55 ? 1.6 : 1.2
+        };
+      }
+
+      function build() {
+        stars = [];
+        var starCount = Math.round(Math.min(220, (W * H) / 7000));
+        for (var i = 0; i < starCount; i++) {
+          stars.push({ x: Math.random() * W, y: Math.random() * H, r: rand(0.4, 1.15), a: rand(0.15, 0.6) });
+        }
+
+        rocks = [];
+        var rockCount = Math.max(5, Math.min(13, Math.round((W * H) / 165000)));
+        for (var j = 0; j < rockCount; j++) {
+          rocks.push(makeRock(Math.random() * W, Math.random() * H, rand(24, 88)));
+        }
+
+        ship = {
+          x: W * 0.5, y: H * 0.5, r: Math.max(16, Math.min(30, W / 46)),
+          vx: rand(-16, 16), vy: rand(-11, 11),
+          rot: rand(0, Math.PI * 2), vrot: 0.16
+        };
+      }
+
+      function resize() {
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        W = window.innerWidth;
+        H = window.innerHeight;
+        canvas.width = Math.round(W * dpr);
+        canvas.height = Math.round(H * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        build();
+        if (reduced) draw();
+      }
+
+      function wrap(o, pad) {
+        if (o.x < -pad) o.x = W + pad;
+        if (o.x > W + pad) o.x = -pad;
+        if (o.y < -pad) o.y = H + pad;
+        if (o.y > H + pad) o.y = -pad;
+      }
+
+      function drawRock(r) {
+        ctx.save();
+        ctx.translate(r.x, r.y);
+        ctx.rotate(r.rot);
+        ctx.beginPath();
+        for (var i = 0; i < r.verts.length; i++) {
+          var v = r.verts[i];
+          var px = Math.cos(v.a) * v.r;
+          var py = Math.sin(v.a) * v.r;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.lineWidth = r.width;
+        ctx.strokeStyle = 'rgba(255,255,255,0.78)';
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawShip(s) {
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.rot);
+        ctx.beginPath();
+        ctx.moveTo(s.r * 1.35, 0);
+        ctx.lineTo(-s.r * 0.85, s.r * 0.8);
+        ctx.lineTo(-s.r * 0.45, 0);
+        ctx.lineTo(-s.r * 0.85, -s.r * 0.8);
+        ctx.closePath();
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+
+        for (var i = 0; i < stars.length; i++) {
+          var st = stars[i];
+          ctx.beginPath();
+          ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255,255,255,' + st.a + ')';
+          ctx.fill();
+        }
+
+        for (var j = 0; j < rocks.length; j++) drawRock(rocks[j]);
+        if (ship) drawShip(ship);
+      }
+
+      var last = 0;
+      function frame(now) {
+        var dt = last ? Math.min((now - last) / 1000, 0.05) : 0.016;
+        last = now;
+
+        for (var i = 0; i < rocks.length; i++) {
+          var r = rocks[i];
+          r.x += r.vx * dt;
+          r.y += r.vy * dt;
+          r.rot += r.vrot * dt;
+          wrap(r, r.r * 1.3);
+        }
+
+        ship.x += ship.vx * dt;
+        ship.y += ship.vy * dt;
+        ship.rot += ship.vrot * dt;
+        wrap(ship, ship.r * 2);
+
+        draw();
+        raf = requestAnimationFrame(frame);
+      }
+
+      var raf = null;
+      function start() {
+        if (reduced || raf) return;
+        last = 0;
+        raf = requestAnimationFrame(frame);
+      }
+      function stop() {
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+      }
+
+      var resizeTimer = null;
+      window.addEventListener('resize', function () {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(resize, 150);
+      });
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) stop(); else start();
+      });
+
+      resize();
+      start();
+
+      // Arcade-style keyboard menu: arrows move the highlight, Enter activates.
+      var items = Array.prototype.slice.call(document.querySelectorAll('[data-menu]'));
+      var index = -1;
+      function highlight(next) {
+        index = (next + items.length) % items.length;
+        items.forEach(function (el, i) {
+          el.setAttribute('data-active', String(i === index));
+        });
+        items[index].focus();
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); highlight(index + 1); }
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); highlight(index - 1); }
+      });
+      items.forEach(function (el, i) {
+        el.addEventListener('mouseenter', function () { index = i; });
+      });
+    })();
+  </script>
 </body>
 </html>
